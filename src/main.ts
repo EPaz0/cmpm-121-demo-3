@@ -62,13 +62,30 @@ function spawnCache(i: number, j: number) {
   popupDiv.innerHTML = `
     <div>Cache at (${i}, ${j})</div>
     <div>Coins: <span id="coinValue">${coinValue}</span></div>
-    <button id="collectButton">Collect</button>`;
+    <button id="collectButton">Collect</button>
+    <button id="depositButton">Deposit</button>`;
 
   // Add event listener once for the button
   popupDiv.querySelector("#collectButton")?.addEventListener("click", () => {
     if (coinValue > 0) {
       playerCoins += 1;
       coinValue -= 1;
+      statusPanel.innerHTML = `Coins: ${playerCoins}`; // Update player's coin count
+      // Update coin value in the popup
+      const coinValueSpan = popupDiv.querySelector(
+        "#coinValue",
+      ) as HTMLSpanElement;
+      if (coinValueSpan) {
+        coinValueSpan.innerText = `${coinValue}`;
+      }
+    }
+  });
+
+  // Add event listener once for the button
+  popupDiv.querySelector("#depositButton")?.addEventListener("click", () => {
+    if (playerCoins > 0) {
+      playerCoins -= 1;
+      coinValue += 1;
       statusPanel.innerHTML = `Coins: ${playerCoins}`; // Update player's coin count
       // Update coin value in the popup
       const coinValueSpan = popupDiv.querySelector(

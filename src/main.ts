@@ -41,6 +41,14 @@ let playerCoins = 0; // Track player's total coins
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 
+function latLngToGrid(lat: number, lng: number): { i: number; j: number } {
+  const TILE_DEGREES = 0.0001; // Grid resolution (degrees per tile)
+  return {
+    i: Math.floor(lat / TILE_DEGREES),
+    j: Math.floor(lng / TILE_DEGREES),
+  };
+}
+
 function spawnCache(i: number, j: number) {
   const origin = OAKES_CLASSROOM;
 
@@ -54,13 +62,17 @@ function spawnCache(i: number, j: number) {
   const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
   rect.addTo(map);
 
+  // Convert the bounds' center to `{i, j}` grid coordinates
+  const center = bounds.getCenter();
+  const gridCoords = latLngToGrid(center.lat, center.lng);
+
   let coinValue = Math.floor(luck(`${i},${j}`) * 100) % 10 + 1; // Random coin value for each cache
-  console.log(`Cache at (${i}, ${j}) Coin Value = ${coinValue} `);
-  console.log(`Luck value: ${luck(`${i},${j}`)}`);
+  // console.log(`Cache at (${i}, ${j}) Coin Value = ${coinValue} `);
+  // console.log(`Luck value: ${luck(`${i},${j}`)}`);
   const popupDiv = document.createElement("div");
 
   popupDiv.innerHTML = `
-    <div>Cache at (${i}, ${j})</div>
+    <div>Cache at (${gridCoords.i}, ${gridCoords.j})</div>
     <div>Coins: <span id="coinValue">${coinValue}</span></div>
     <button id="collectButton">Collect</button>
     <button id="depositButton">Deposit</button>`;

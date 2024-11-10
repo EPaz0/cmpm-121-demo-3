@@ -6,6 +6,9 @@ import "./style.css";
 // Fix missing marker images in Leaflet
 import "./leafletWorkaround.ts";
 
+import { Board } from "./board.ts";
+import { Coin, createCoin, getCoinId } from "./coin.ts";
+
 // Import deterministic random number generator
 import luck from "./luck.ts";
 
@@ -33,89 +36,102 @@ const playerMarker = leaflet.marker(OAKES_CLASSROOM);
 playerMarker.bindTooltip("That's you!");
 playerMarker.addTo(map);
 
-const TILE_DEGREES = 0.0001; // Width of tile
-const NEIGHBORHOOD_SIZE = 8; // Define an 8x8 grid of cells
+// Create the Board instance
+const TILE_WIDTH = 0.0001; // 1 cell = 0.0001 degrees
+const TILE_VISIBILITY_RADIUS = 8; // Define visibility radius
 const CACHE_SPAWN_PROBABILITY = 0.1; // 10% chance to spawn a cache
+const board = new Board(TILE_WIDTH);
 
+const playerInventory: Coin[] = [];
 let playerCoins = 0; // Track player's total coins
 const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 
-function latLngToGrid(lat: number, lng: number): { i: number; j: number } {
-  const TILE_DEGREES = 0.0001; // Grid resolution (degrees per tile)
-  return {
-    i: Math.floor(lat / TILE_DEGREES),
-    j: Math.floor(lng / TILE_DEGREES),
-  };
-}
+function spawnCache(iOffset: number, jOffset: number) {
+  // Use Board to get the Cell at the given offsets
+  const centerLatLng = OAKES_CLASSROOM;
+  const offsetLatLng = leaflet.latLng(
+    centerLatLng.lat + iOffset * TILE_WIDTH,
+    centerLatLng.lng + jOffset * TILE_WIDTH,
+  );
 
-function spawnCache(i: number, j: number) {
-  const origin = OAKES_CLASSROOM;
+  const cell = board.getCellForPoint(offsetLatLng); // Get a canonical Cell
+  const bounds = board.getCellBounds(cell); // Get the cell bounds
 
-  // Calculate the cell bounds
-  const bounds = leaflet.latLngBounds([
-    [origin.lat + i * TILE_DEGREES, origin.lng + j * TILE_DEGREES],
-    [origin.lat + (i + 1) * TILE_DEGREES, origin.lng + (j + 1) * TILE_DEGREES],
-  ]);
-
-  // Add a rectangle to represent the cache on the map
   const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
   rect.addTo(map);
 
-  // Convert the bounds' center to `{i, j}` grid coordinates
-  const center = bounds.getCenter();
-  const gridCoords = latLngToGrid(center.lat, center.lng);
+  const coins: Coin[] = [];
+  const coinCount = Math.floor(luck(`${cell.i},${cell.j}`) * 4) + 1; // 1-4 coins
 
-  let coinValue = Math.floor(luck(`${i},${j}`) * 100) % 10 + 1; // Random coin value for each cache
-  // console.log(`Cache at (${i}, ${j}) Coin Value = ${coinValue} `);
-  // console.log(`Luck value: ${luck(`${i},${j}`)}`);
+  for (let serial = 0; serial < coinCount; serial++) {
+    const coin = createCoin(cell, serial);
+    coins.push(coin);
+    console.log(`Coin created: ${getCoinId(coin)}`);
+  }
+
+  let coinValue = coins.length;
+
   const popupDiv = document.createElement("div");
-
   popupDiv.innerHTML = `
-    <div>Cache at (${gridCoords.i}, ${gridCoords.j})</div>
+    <div>Cache at (${cell.i}, ${cell.j})</div>
     <div>Coins: <span id="coinValue">${coinValue}</span></div>
+    <ul id="coinList">${
+    coins.map((c) => `<li>${getCoinId(c)}</li>`).join("")
+  }</ul>
     <button id="collectButton">Collect</button>
     <button id="depositButton">Deposit</button>`;
 
-  // Add event listener once for the button
   popupDiv.querySelector("#collectButton")?.addEventListener("click", () => {
     if (coinValue > 0) {
-      playerCoins += 1;
-      coinValue -= 1;
-      statusPanel.innerHTML = `Coins: ${playerCoins}`; // Update player's coin count
-      // Update coin value in the popup
+      const collectedCoin = coins.pop();
+      playerCoins++;
+      coinValue--;
+
+      const coinList = popupDiv.querySelector("#coinList") as HTMLUListElement;
+      coinList.removeChild(coinList.lastChild!);
+
+      statusPanel.innerHTML = `Coins: ${playerCoins}`;
       const coinValueSpan = popupDiv.querySelector(
         "#coinValue",
       ) as HTMLSpanElement;
-      if (coinValueSpan) {
+      coinValueSpan.innerText = `${coinValue}`;
+
+      if (collectedCoin) playerInventory.push(collectedCoin);
+    }
+  });
+
+  popupDiv.querySelector("#depositButton")?.addEventListener("click", () => {
+    if (playerCoins > 0) {
+      const depositedCoin = playerInventory.pop();
+      if (depositedCoin) {
+        coins.push(depositedCoin);
+        playerCoins--;
+        coinValue++;
+
+        const coinList = popupDiv.querySelector(
+          "#coinList",
+        ) as HTMLUListElement;
+        const newCoinItem = document.createElement("li");
+        newCoinItem.textContent = getCoinId(depositedCoin);
+        coinList.appendChild(newCoinItem);
+
+        statusPanel.innerHTML = `Coins: ${playerCoins}`;
+        const coinValueSpan = popupDiv.querySelector(
+          "#coinValue",
+        ) as HTMLSpanElement;
         coinValueSpan.innerText = `${coinValue}`;
       }
     }
   });
 
-  // Add event listener once for the button
-  popupDiv.querySelector("#depositButton")?.addEventListener("click", () => {
-    if (playerCoins > 0) {
-      playerCoins -= 1;
-      coinValue += 1;
-      statusPanel.innerHTML = `Coins: ${playerCoins}`; // Update player's coin count
-      // Update coin value in the popup
-      const coinValueSpan = popupDiv.querySelector(
-        "#coinValue",
-      ) as HTMLSpanElement;
-      if (coinValueSpan) {
-        coinValueSpan.innerText = `${coinValue}`;
-      }
-    }
-  });
-  // Bind pre-generated content to the popup
   rect.bindPopup(popupDiv);
 }
 
 // Scan the neighborhood to spawn caches
-for (let i = -NEIGHBORHOOD_SIZE; i <= NEIGHBORHOOD_SIZE; i++) {
-  for (let j = -NEIGHBORHOOD_SIZE; j <= NEIGHBORHOOD_SIZE; j++) {
-    if (luck(`${i},${j}`) < CACHE_SPAWN_PROBABILITY) { // Use deterministic luck
+for (let i = -TILE_VISIBILITY_RADIUS; i <= TILE_VISIBILITY_RADIUS; i++) {
+  for (let j = -TILE_VISIBILITY_RADIUS; j <= TILE_VISIBILITY_RADIUS; j++) {
+    if (luck(`${i},${j}`) < CACHE_SPAWN_PROBABILITY) {
       spawnCache(i, j);
     }
   }

@@ -13,6 +13,7 @@ import { Coin, createCoin, getCoinId } from "./coin.ts";
 import luck from "./luck.ts";
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
+let playerPosition = OAKES_CLASSROOM;
 
 // Initialize the map
 const map = leaflet.map("map", {
@@ -136,3 +137,25 @@ for (let i = -TILE_VISIBILITY_RADIUS; i <= TILE_VISIBILITY_RADIUS; i++) {
     }
   }
 }
+function movePlayer(latOffset: number, lngOffset: number) {
+  playerPosition = leaflet.latLng(
+    playerPosition.lat + latOffset,
+    playerPosition.lng + lngOffset,
+  );
+
+  // Update the marker's position on the map
+  playerMarker.setLatLng(playerPosition);
+}
+// Add event listeners to buttons
+document.querySelector("#upButton")?.addEventListener("click", () => {
+  movePlayer(0.0001, 0); // Move north
+});
+document.querySelector("#downButton")?.addEventListener("click", () => {
+  movePlayer(-0.0001, 0); // Move south
+});
+document.querySelector("#leftButton")?.addEventListener("click", () => {
+  movePlayer(0, -0.0001); // Move west
+});
+document.querySelector("#rightButton")?.addEventListener("click", () => {
+  movePlayer(0, 0.0001); // Move east
+});

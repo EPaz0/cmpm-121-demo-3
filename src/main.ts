@@ -6,7 +6,7 @@ import "./style.css";
 // Fix missing marker images in Leaflet
 import "./leafletWorkaround.ts";
 
-import { Board,Cell } from "./board.ts";
+import { Board, Cell } from "./board.ts";
 import { Coin, createCoin, getCoinId } from "./coin.ts";
 
 // Import deterministic random number generator
@@ -14,7 +14,7 @@ import luck from "./luck.ts";
 import { Cache } from "./cache.ts"; // Import the Cache class
 
 interface CacheLayer extends L.Layer {
-  cache?: Cache;  // Assuming Cache is the type of your cache object
+  cache?: Cache; // Assuming Cache is the type of your cache object
 }
 
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
@@ -56,45 +56,42 @@ const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 
 function initGame() {
-  regenerateCaches();  // Generate initial caches around the starting position
+  regenerateCaches(); // Generate initial caches around the starting position
 }
 
-document.addEventListener('DOMContentLoaded', initGame); // Ensure the DOM is fully loaded before initializing the game
-
+document.addEventListener("DOMContentLoaded", initGame); // Ensure the DOM is fully loaded before initializing the game
 
 function spawnCache(iOffset: number, jOffset: number) {
   const newCachePosition = leaflet.latLng(
     playerPosition.lat + iOffset,
     playerPosition.lng + jOffset,
-);
+  );
 
-const cell = board.getCellForPoint(newCachePosition);
-const bounds = board.getCellBounds(cell);
+  const cell = board.getCellForPoint(newCachePosition);
+  const bounds = board.getCellBounds(cell);
 
-let cache = loadCacheState(cell);
-if (!cache) {
+  let cache = loadCacheState(cell);
+  if (!cache) {
     // Correctly initialize the number of coins, avoid overwriting `coinCount`
     cache = new Cache(cell, Math.floor(luck(`${cell.i},${cell.j}`) * 100) + 1);
-    console.log(`New Cache created at ${cell.i}, ${cell.j} with ${cache.coins.length} coins`);
-} else {
+    console.log(
+      `New Cache created at ${cell.i}, ${cell.j} with ${cache.coins.length} coins`,
+    );
+  } else {
     console.log(`Loaded Cache from state at ${cell.i}, ${cell.j}`);
+  }
+
+  const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
+  rect.addTo(cacheLayer);
+  rect.bindPopup(() => createPopupForCache(cache));
+
+  return cache;
 }
-
-const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
-rect.addTo(cacheLayer);
-rect.bindPopup(() => createPopupForCache(cache));
-
-return cache;
-}
-
-
-
-
 
 function movePlayer(latOffset: number, lngOffset: number) {
   playerPosition = leaflet.latLng(
-      playerPosition.lat + latOffset,
-      playerPosition.lng + lngOffset,
+    playerPosition.lat + latOffset,
+    playerPosition.lng + lngOffset,
   );
 
   playerMarker.setLatLng(playerPosition); // Update player's marker
@@ -105,28 +102,29 @@ function movePlayer(latOffset: number, lngOffset: number) {
 
 function regenerateCaches() {
   clearCaches();
-    
+
   for (let i = -TILE_VISIBILITY_RADIUS; i <= TILE_VISIBILITY_RADIUS; i++) {
-      for (let j = -TILE_VISIBILITY_RADIUS; j <= TILE_VISIBILITY_RADIUS; j++) {
-          const latOffset = i * TILE_WIDTH;
-          const lngOffset = j * TILE_WIDTH;
-          const newPosition = leaflet.latLng(
-              playerPosition.lat + latOffset,
-              playerPosition.lng + lngOffset
-          );
-          const cell = board.getCellForPoint(newPosition);
-          let cache = loadCacheState(cell);
+    for (let j = -TILE_VISIBILITY_RADIUS; j <= TILE_VISIBILITY_RADIUS; j++) {
+      const latOffset = i * TILE_WIDTH;
+      const lngOffset = j * TILE_WIDTH;
+      const newPosition = leaflet.latLng(
+        playerPosition.lat + latOffset,
+        playerPosition.lng + lngOffset,
+      );
+      const cell = board.getCellForPoint(newPosition);
+      let cache = loadCacheState(cell);
 
-          if (!cache && luck(`${cell.i},${cell.j}`) < CACHE_SPAWN_PROBABILITY) {
-              cache = spawnCache(latOffset, lngOffset);
-          } 
-
-          if (cache) {
-              const bounds = board.getCellBounds(cell);
-              const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 }).addTo(cacheLayer);
-              rect.bindPopup(() => createPopupForCache(cache));
-          }
+      if (!cache && luck(`${cell.i},${cell.j}`) < CACHE_SPAWN_PROBABILITY) {
+        cache = spawnCache(latOffset, lngOffset);
       }
+
+      if (cache) {
+        const bounds = board.getCellBounds(cell);
+        const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 })
+          .addTo(cacheLayer);
+        rect.bindPopup(() => createPopupForCache(cache));
+      }
+    }
   }
 }
 function createPopupForCache(cache: Cache) {
@@ -135,7 +133,9 @@ function createPopupForCache(cache: Cache) {
   popupDiv.innerHTML = `
     <div>Cache at (${cache.cell.i}, ${cache.cell.j})</div>
     <div>Coins: <span id="coinValue">${coinValue}</span></div>
-    <ul id="coinList">${cache.coins.map(c => `<li>${getCoinId(c)}</li>`).join("")}</ul>
+    <ul id="coinList">${
+    cache.coins.map((c) => `<li>${getCoinId(c)}</li>`).join("")
+  }</ul>
     <button id="collectButton">Collect</button>
     <button id="depositButton">Deposit</button>
   `;
@@ -189,8 +189,8 @@ function clearCaches() {
 function saveCacheState(cache: Cache) {
   const key = `cache-${cache.cell.i}-${cache.cell.j}`;
   const state = {
-    coins: cache.coins.map(coin => getCoinId(coin)), // Save only coin IDs or a state that represents the coins
-    remainingCoins: cache.remainingCoins // Assuming you keep track of how many coins are left in the cache
+    coins: cache.coins.map((coin) => getCoinId(coin)), // Save only coin IDs or a state that represents the coins
+    remainingCoins: cache.remainingCoins, // Assuming you keep track of how many coins are left in the cache
   };
   localStorage.setItem(key, JSON.stringify(state));
 }
@@ -201,10 +201,12 @@ function loadCacheState(cell: Cell): Cache | null {
 
   if (savedState) {
     const cacheData = JSON.parse(savedState);
-    const cache = new Cache(cell, 0);  // Assuming the cache starts with zero coins and they are set from the saved state
+    const cache = new Cache(cell, 0); // Assuming the cache starts with zero coins and they are set from the saved state
 
     // Explicitly type coinId as string since JSON.parse results in any
-    cache.coins = cacheData.coins.map((coinId: string) => recreateCoinFromId(coinId));
+    cache.coins = cacheData.coins.map((coinId: string) =>
+      recreateCoinFromId(coinId)
+    );
     cache.remainingCoins = cacheData.remainingCoins;
 
     return cache;
@@ -214,8 +216,8 @@ function loadCacheState(cell: Cell): Cache | null {
 }
 
 function recreateCoinFromId(coinId: string) {
-  const [i, j, serial] = coinId.split(':');
-  const cell = {i: parseInt(i), j: parseInt(j)}; // Recreate the cell object
+  const [i, j, serial] = coinId.split(":");
+  const cell = { i: parseInt(i), j: parseInt(j) }; // Recreate the cell object
   return createCoin(cell, parseInt(serial));
 }
 
@@ -241,15 +243,15 @@ for (let i = -TILE_VISIBILITY_RADIUS; i <= TILE_VISIBILITY_RADIUS; i++) {
   }
 }
 function clearCacheEntries() {
-  Object.keys(localStorage).forEach(key => {
-    if (key.startsWith('cache-')) {
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("cache-")) {
       localStorage.removeItem(key);
     }
   });
 }
 function resetGame() {
-  clearCacheEntries();  // or clearAllStoredData();
-  location.reload();    // Reload to reflect changes
+  clearCacheEntries(); // or clearAllStoredData();
+  location.reload(); // Reload to reflect changes
 }
 
 // Add a button to trigger the reset

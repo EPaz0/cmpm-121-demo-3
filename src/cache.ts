@@ -40,4 +40,3 @@ export class Cache implements Memento<string> {
     });
   }
 }
-

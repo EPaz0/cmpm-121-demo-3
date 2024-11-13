@@ -14,3 +14,4 @@ export function createCoin(cell: Cell, serial: number): Coin {
 export function getCoinId(coin: Coin): string {
   return `${coin.cell.i}:${coin.cell.j}#${coin.serial}`;
 }
+

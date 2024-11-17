@@ -58,6 +58,7 @@ statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 function initGame() {
   loadGameState(); // Load the player's state
   regenerateCaches(); // Generate initial caches around the starting position
+  loadCollectedCoinsFromStorage();
 }
 
 document.addEventListener("DOMContentLoaded", initGame); // Ensure the DOM is fully loaded before initializing the game
@@ -132,6 +133,31 @@ function regenerateCaches() {
       }
     }
   }
+}
+
+function saveCollectedCoinsToStorage() {
+  const collectedCoins = playerInventory.map((coin) => ({
+    id: getCoinId(coin), // Save ID as string
+    cell: coin.cell, // Save cell as { i, j }
+    serial: coin.serial, // Save serial
+  }));
+  localStorage.setItem("collectedCoins", JSON.stringify(collectedCoins));
+}
+function loadCollectedCoinsFromStorage() {
+  const savedCoins = JSON.parse(localStorage.getItem("collectedCoins") || "[]");
+
+  savedCoins.forEach(
+    (savedCoin: { id: string; cell: Cell; serial: number }) => {
+      const coin = createCoin(savedCoin.cell, savedCoin.serial);
+      updateCollectedCoinsUI(coin); // Re-add the coin to the UI
+      playerInventory.push(coin); // Add back to player's inventory
+    },
+  );
+}
+
+function updateCoinCounter() {
+  statusPanel.innerHTML = `Coins: ${playerCoins}`;
+  localStorage.setItem("playerCoins", playerCoins.toString());
 }
 
 function updateCollectedCoinsUI(coin: Coin) {
@@ -209,7 +235,9 @@ function createPopupForCache(cache: Cache) {
 
       // Update the collected coins list UI
       playerInventory.push(collectedCoin);
+      saveCollectedCoinsToStorage();
       updateCollectedCoinsUI(collectedCoin); // Add the coin to the list and make it clickable
+      updateCoinCounter();
       saveCacheState(cache); // Save the updated state
     }
   });
@@ -228,7 +256,22 @@ function createPopupForCache(cache: Cache) {
 
       statusPanel.innerHTML = `Coins: ${playerCoins}`;
       popupDiv.querySelector("#coinValue")!.textContent = `${coinValue}`;
+      updateCoinCounter();
       saveCacheState(cache); // Save updated state
+
+      // Remove from the collected coins UI
+      const collectedCoinsList = document.querySelector(
+        "#collectedCoinsList",
+      ) as HTMLUListElement;
+      const coinItems = Array.from(collectedCoinsList.querySelectorAll("li"));
+      for (const item of coinItems) {
+        if (item.textContent === `Coin: ${getCoinId(depositedCoin)}`) {
+          collectedCoinsList.removeChild(item);
+          break;
+        }
+      }
+
+      saveCollectedCoinsToStorage(); // Update localStorage after removal
     }
   });
 
@@ -267,6 +310,7 @@ function loadGameState() {
   }
   if (savedCoins) {
     playerCoins = parseInt(savedCoins, 10);
+    updateCoinCounter();
     statusPanel.innerHTML = `Coins: ${playerCoins}`;
   }
 }

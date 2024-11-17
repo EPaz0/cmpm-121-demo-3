@@ -20,9 +20,13 @@ interface CacheLayer extends L.Layer {
 const OAKES_CLASSROOM = leaflet.latLng(36.98949379578401, -122.06277128548504);
 let playerPosition = OAKES_CLASSROOM;
 
-// Initialize the map
+const savedPosition = localStorage.getItem("playerPosition");
+const initialPosition = savedPosition
+  ? leaflet.latLng(JSON.parse(savedPosition))
+  : OAKES_CLASSROOM;
+
 const map = leaflet.map("map", {
-  center: OAKES_CLASSROOM,
+  center: initialPosition, // Center the map on the saved position if it exists
   zoom: 19, // Set appropriate zoom level for the game
   minZoom: 19,
   maxZoom: 19,

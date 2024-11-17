@@ -56,6 +56,7 @@ const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
 statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 
 function initGame() {
+  loadGameState(); // Load the player's state
   regenerateCaches(); // Generate initial caches around the starting position
 }
 
@@ -74,11 +75,11 @@ function spawnCache(iOffset: number, jOffset: number) {
   if (!cache) {
     // Correctly initialize the number of coins, avoid overwriting `coinCount`
     cache = new Cache(cell, Math.floor(luck(`${cell.i},${cell.j}`) * 100) + 1);
-    console.log(
+    /*console.log(
       `New Cache created at ${cell.i}, ${cell.j} with ${cache.coins.length} coins`,
-    );
+    );*/
   } else {
-    console.log(`Loaded Cache from state at ${cell.i}, ${cell.j}`);
+    // console.log(`Loaded Cache from state at ${cell.i}, ${cell.j}`);
   }
 
   const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
@@ -87,17 +88,22 @@ function spawnCache(iOffset: number, jOffset: number) {
 
   return cache;
 }
-
+const movementHistory: leaflet.Polyline = leaflet.polyline([], { color: "red" })
+  .addTo(map);
 function movePlayer(latOffset: number, lngOffset: number) {
-  playerPosition = leaflet.latLng(
+  const newLatLng = leaflet.latLng(
     playerPosition.lat + latOffset,
     playerPosition.lng + lngOffset,
   );
 
-  playerMarker.setLatLng(playerPosition); // Update player's marker
+  movementHistory.addLatLng(newLatLng);
+  playerPosition = newLatLng;
+  playerMarker.setLatLng(playerPosition);
 
-  // Clear and regenerate caches around the new position
+  map.panTo(newLatLng); // Center the map on the player's new position
+
   regenerateCaches();
+  saveGameState();
 }
 
 function regenerateCaches() {
@@ -127,6 +133,40 @@ function regenerateCaches() {
     }
   }
 }
+
+function updateCollectedCoinsUI(coin: Coin) {
+  const collectedCoinsList = document.querySelector(
+    "#collectedCoinsList",
+  ) as HTMLUListElement;
+
+  const coinListItem = document.createElement("li");
+
+  // Create a clickable link for each coin
+  const coinLink = document.createElement("a");
+  coinLink.href = "#"; // Prevent default navigation
+  coinLink.textContent = `Coin: ${getCoinId(coin)}`;
+  coinLink.style.color = "blue"; // Optional: styling for the link
+  coinLink.style.textDecoration = "underline";
+
+  console.log(`Coin ID from getCoinId: ${getCoinId(coin)}`); // <--- Add this comment here
+
+  // Add click event to zoom and center the map on the coin's original cache
+  coinLink.addEventListener("click", (event) => {
+    event.preventDefault(); // Prevent default behavior of <a>
+    const [i, jWithSerial] = getCoinId(coin).split(":"); // Split by ":"
+    const [j] = jWithSerial.split("#"); // Split j from the serial using "#"
+
+    console.log(`Zooming to coin at i:${i}, j:${j}`); // Debugging log
+
+    const coinCell = board.getCellByIndices(Number(i), Number(j)); // Convert to numbers and get cell
+    const cacheBounds = board.getCellBounds(coinCell); // Get bounds for the cache
+    map.fitBounds(cacheBounds, { maxZoom: 19, animate: true }); // Zoom and center map
+  });
+
+  coinListItem.appendChild(coinLink);
+  collectedCoinsList.appendChild(coinListItem);
+}
+
 function createPopupForCache(cache: Cache) {
   let coinValue = cache.coins.length;
   const popupDiv = document.createElement("div");
@@ -134,39 +174,56 @@ function createPopupForCache(cache: Cache) {
     <div>Cache at (${cache.cell.i}, ${cache.cell.j})</div>
     <div>Coins: <span id="coinValue">${coinValue}</span></div>
     <ul id="coinList">${
-    cache.coins.map((c) => `<li>${getCoinId(c)}</li>`).join("")
+    cache.coins.map((c) =>
+      `<li class="coin" data-id="${getCoinId(c)}">${getCoinId(c)}</li>`
+    ).join("")
   }</ul>
     <button id="collectButton">Collect</button>
     <button id="depositButton">Deposit</button>
   `;
 
+  // Center map on coin's cache when coin in the popup is clicked
+  popupDiv.querySelectorAll(".coin").forEach((coinElement) => {
+    coinElement.addEventListener("click", (event) => {
+      const coinId = (event.target as HTMLElement).dataset.id!;
+      const [i, j] = coinId.split(":").map(Number); // Extract cell indices from coin ID
+      const coinCell = board.getCellByIndices(i, j); // Get cell of the cache
+      const coinBounds = board.getCellBounds(coinCell);
+
+      map.fitBounds(coinBounds); // Center map on this cache's home bounds
+    });
+  });
+
+  // Handle collecting coins
   popupDiv.querySelector("#collectButton")?.addEventListener("click", () => {
     if (coinValue > 0) {
-      const collectedCoin = cache.coins.pop();
+      const collectedCoin = cache.coins.pop() as Coin; // Collect a coin
       playerCoins++;
       coinValue--;
 
       const coinList = popupDiv.querySelector("#coinList") as HTMLUListElement;
-      coinList.removeChild(coinList.lastChild!);
+      coinList.removeChild(coinList.lastChild!); // Remove coin from popup list
 
       statusPanel.innerHTML = `Coins: ${playerCoins}`;
       popupDiv.querySelector("#coinValue")!.textContent = `${coinValue}`;
 
-      if (collectedCoin) playerInventory.push(collectedCoin);
-      saveCacheState(cache); // Save updated state
+      // Update the collected coins list UI
+      playerInventory.push(collectedCoin);
+      updateCollectedCoinsUI(collectedCoin); // Add the coin to the list and make it clickable
+      saveCacheState(cache); // Save the updated state
     }
   });
 
   popupDiv.querySelector("#depositButton")?.addEventListener("click", () => {
     if (playerCoins > 0) {
-      const depositedCoin = playerInventory.pop();
-      cache.coins.push(depositedCoin!);
+      const depositedCoin = playerInventory.pop()!;
+      cache.coins.push(depositedCoin);
       playerCoins--;
       coinValue++;
 
       const coinList = popupDiv.querySelector("#coinList") as HTMLUListElement;
       const newCoinItem = document.createElement("li");
-      newCoinItem.textContent = getCoinId(depositedCoin!);
+      newCoinItem.textContent = getCoinId(depositedCoin);
       coinList.appendChild(newCoinItem);
 
       statusPanel.innerHTML = `Coins: ${playerCoins}`;
@@ -192,7 +249,26 @@ function saveCacheState(cache: Cache) {
     coins: cache.coins.map((coin) => getCoinId(coin)), // Save only coin IDs or a state that represents the coins
     remainingCoins: cache.remainingCoins, // Assuming you keep track of how many coins are left in the cache
   };
+
   localStorage.setItem(key, JSON.stringify(state));
+}
+function saveGameState() {
+  localStorage.setItem("playerPosition", JSON.stringify(playerPosition));
+  localStorage.setItem("playerCoins", playerCoins.toString());
+}
+
+function loadGameState() {
+  const savedPosition = localStorage.getItem("playerPosition");
+  const savedCoins = localStorage.getItem("playerCoins");
+
+  if (savedPosition) {
+    playerPosition = leaflet.latLng(JSON.parse(savedPosition));
+    playerMarker.setLatLng(playerPosition);
+  }
+  if (savedCoins) {
+    playerCoins = parseInt(savedCoins, 10);
+    statusPanel.innerHTML = `Coins: ${playerCoins}`;
+  }
 }
 
 function loadCacheState(cell: Cell): Cache | null {
@@ -250,9 +326,32 @@ function clearCacheEntries() {
   });
 }
 function resetGame() {
-  clearCacheEntries(); // or clearAllStoredData();
-  location.reload(); // Reload to reflect changes
+  clearCacheEntries();
+  localStorage.clear(); // Clear all saved game state
+  location.reload();
 }
 
 // Add a button to trigger the reset
-document.querySelector("#resetButton")?.addEventListener("click", resetGame);
+document.querySelector("#resetButton")?.addEventListener("click", () => {
+  if (confirm("Are you sure you want to erase your game state?")) {
+    resetGame();
+  }
+});
+
+// Enable geolocation-based tracking when the globe button is pressed
+document.querySelector("#globeButton")?.addEventListener("click", () => {
+  map.locate({ setView: true, watch: true, maxZoom: 19 });
+});
+
+map.on("locationfound", (e: L.LocationEvent) => {
+  const newLatLng = e.latlng;
+  playerPosition = newLatLng;
+  playerMarker.setLatLng(newLatLng);
+  regenerateCaches(); // Update nearby caches
+});
+
+map.on("locationerror", (_e: L.ErrorEvent) => {
+  alert(
+    "Could not get your location. Please ensure location services are enabled.",
+  );
+});

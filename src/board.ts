@@ -55,4 +55,7 @@ export class Board {
 
     return resultCells;
   }
+  public getCellByIndices(i: number, j: number): Cell {
+    return this.getCanonicalCell({ i, j });
+  }
 }

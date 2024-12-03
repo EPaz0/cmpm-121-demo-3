@@ -13,6 +13,8 @@ import { Coin, createCoin, getCoinId } from "./coin.ts";
 import luck from "./luck.ts";
 import { Cache } from "./cache.ts"; // Import the Cache class
 
+import { StorageManager } from "./StorageManager.ts";
+
 interface CacheLayer extends L.Layer {
   cache?: Cache; // Assuming Cache is the type of your cache object
 }
@@ -108,7 +110,7 @@ function movePlayer(latOffset: number, lngOffset: number) {
   map.panTo(newLatLng); // Center the map on the player's new position
 
   regenerateCaches();
-  saveGameState();
+  StorageManager.saveGameState(playerPosition, playerCoins);
 }
 
 function regenerateCaches() {
@@ -141,22 +143,20 @@ function regenerateCaches() {
 
 function saveCollectedCoinsToStorage() {
   const collectedCoins = playerInventory.map((coin) => ({
-    id: getCoinId(coin), // Save ID as string
-    cell: coin.cell, // Save cell as { i, j }
-    serial: coin.serial, // Save serial
+    id: getCoinId(coin),
+    cell: coin.cell,
+    serial: coin.serial,
   }));
-  localStorage.setItem("collectedCoins", JSON.stringify(collectedCoins));
+  StorageManager.saveCollectedCoins(collectedCoins);
 }
 function loadCollectedCoinsFromStorage() {
-  const savedCoins = JSON.parse(localStorage.getItem("collectedCoins") || "[]");
+  const savedCoins = StorageManager.loadCollectedCoins();
 
-  savedCoins.forEach(
-    (savedCoin: { id: string; cell: Cell; serial: number }) => {
-      const coin = createCoin(savedCoin.cell, savedCoin.serial);
-      updateCollectedCoinsUI(coin); // Re-add the coin to the UI
-      playerInventory.push(coin); // Add back to player's inventory
-    },
-  );
+  savedCoins.forEach((savedCoin: { cell: Cell; serial: number }) => {
+    const coin = createCoin(savedCoin.cell, savedCoin.serial);
+    updateCollectedCoinsUI(coin);
+    playerInventory.push(coin);
+  });
 }
 
 function updateCoinCounter() {
@@ -293,27 +293,18 @@ function clearCaches() {
 function saveCacheState(cache: Cache) {
   const key = `cache-${cache.cell.i}-${cache.cell.j}`;
   const state = {
-    coins: cache.coins.map((coin) => getCoinId(coin)), // Save only coin IDs or a state that represents the coins
-    remainingCoins: cache.remainingCoins, // Assuming you keep track of how many coins are left in the cache
+    coins: cache.coins, // Use the Coin objects directly
+    remainingCoins: cache.remainingCoins, // Keep as it is
   };
-
-  localStorage.setItem(key, JSON.stringify(state));
-}
-function saveGameState() {
-  localStorage.setItem("playerPosition", JSON.stringify(playerPosition));
-  localStorage.setItem("playerCoins", playerCoins.toString());
+  StorageManager.saveCacheState(key, state); // Pass the correct type
 }
 
 function loadGameState() {
-  const savedPosition = localStorage.getItem("playerPosition");
-  const savedCoins = localStorage.getItem("playerCoins");
-
-  if (savedPosition) {
-    playerPosition = leaflet.latLng(JSON.parse(savedPosition));
+  const gameState = StorageManager.loadGameState();
+  if (gameState) {
+    playerPosition = gameState.playerPosition;
     playerMarker.setLatLng(playerPosition);
-  }
-  if (savedCoins) {
-    playerCoins = parseInt(savedCoins, 10);
+    playerCoins = gameState.playerCoins;
     updateCoinCounter();
     statusPanel.innerHTML = `Coins: ${playerCoins}`;
   }
@@ -321,29 +312,24 @@ function loadGameState() {
 
 function loadCacheState(cell: Cell): Cache | null {
   const key = `cache-${cell.i}-${cell.j}`;
-  const savedState = localStorage.getItem(key);
+  const savedState = StorageManager.loadCacheState(key);
 
   if (savedState) {
-    const cacheData = JSON.parse(savedState);
-    const cache = new Cache(cell, 0); // Assuming the cache starts with zero coins and they are set from the saved state
-
-    // Explicitly type coinId as string since JSON.parse results in any
-    cache.coins = cacheData.coins.map((coinId: string) =>
-      recreateCoinFromId(coinId)
-    );
-    cache.remainingCoins = cacheData.remainingCoins;
-
+    const cache = new Cache(cell, 0);
+    cache.coins = savedState.coins.map((
+      coinData: { cell: Cell; serial: number },
+    ) => createCoin(coinData.cell, coinData.serial));
+    cache.remainingCoins = savedState.remainingCoins;
     return cache;
   }
-
   return null;
 }
-
+/*
 function recreateCoinFromId(coinId: string) {
   const [i, j, serial] = coinId.split(":");
   const cell = { i: parseInt(i), j: parseInt(j) }; // Recreate the cell object
   return createCoin(cell, parseInt(serial));
-}
+}*/
 
 // Add event listeners to buttons
 document.querySelector("#upButton")?.addEventListener("click", () => {
@@ -369,13 +355,13 @@ for (let i = -TILE_VISIBILITY_RADIUS; i <= TILE_VISIBILITY_RADIUS; i++) {
 function clearCacheEntries() {
   Object.keys(localStorage).forEach((key) => {
     if (key.startsWith("cache-")) {
-      localStorage.removeItem(key);
+      StorageManager.clearCache(key);
     }
   });
 }
 function resetGame() {
   clearCacheEntries();
-  localStorage.clear(); // Clear all saved game state
+  StorageManager.clearAll();
   location.reload();
 }
 

@@ -1,4 +1,4 @@
-import { Cell } from "./board.ts"; // Import Cell if needed
+import { Cell } from "./board.ts";
 
 export interface Coin {
   cell: Cell;

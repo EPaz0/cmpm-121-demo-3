@@ -15,6 +15,10 @@ import { Cache } from "./cache.ts"; // Import the Cache class
 
 import { StorageManager } from "./StorageManager.ts";
 
+import { UIManager } from "./uiManager.ts";
+
+const uiManager = new UIManager();
+
 interface CacheLayer extends L.Layer {
   cache?: Cache; // Assuming Cache is the type of your cache object
 }
@@ -58,8 +62,6 @@ const board = new Board(TILE_WIDTH);
 
 const playerInventory: Coin[] = [];
 let playerCoins = 0; // Track player's total coins
-const statusPanel = document.querySelector<HTMLDivElement>("#statusPanel")!;
-statusPanel.innerHTML = `Coins: ${playerCoins}`; // Initial status
 
 function initGame() {
   loadGameState(); // Load the player's state
@@ -91,7 +93,7 @@ function spawnCache(iOffset: number, jOffset: number) {
 
   const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 });
   rect.addTo(cacheLayer);
-  rect.bindPopup(() => createPopupForCache(cache));
+  rect.bindPopup(() => createPopupForCache(cache, rect)); // Pass rect here
 
   return cache;
 }
@@ -135,152 +137,106 @@ function regenerateCaches() {
         const bounds = board.getCellBounds(cell);
         const rect = leaflet.rectangle(bounds, { color: "blue", weight: 1 })
           .addTo(cacheLayer);
-        rect.bindPopup(() => createPopupForCache(cache));
+        rect.bindPopup(() => createPopupForCache(cache, rect));
       }
     }
   }
 }
 
 function saveCollectedCoinsToStorage() {
-  const collectedCoins = playerInventory.map((coin) => ({
-    id: getCoinId(coin),
-    cell: coin.cell,
-    serial: coin.serial,
-  }));
-  StorageManager.saveCollectedCoins(collectedCoins);
+  StorageManager.saveCollectedCoins(playerInventory); // Save the full playerInventory
 }
 function loadCollectedCoinsFromStorage() {
-  const savedCoins = StorageManager.loadCollectedCoins();
+  const collectedCoinsList = document.querySelector("#collectedCoinsList")!;
+  collectedCoinsList.innerHTML = ""; // Clear existing list to avoid duplicates
 
+  const savedCoins = StorageManager.loadCollectedCoins();
   savedCoins.forEach((savedCoin: { cell: Cell; serial: number }) => {
     const coin = createCoin(savedCoin.cell, savedCoin.serial);
-    updateCollectedCoinsUI(coin);
     playerInventory.push(coin);
+    uiManager.updateCollectedCoinsUI(getCoinId(coin), () => {
+      const [i, jWithSerial] = getCoinId(coin).split(":");
+      const [j] = jWithSerial.split("#");
+      const coinCell = board.getCellByIndices(Number(i), Number(j));
+      const cacheBounds = board.getCellBounds(coinCell);
+      map.fitBounds(cacheBounds, { maxZoom: 19, animate: true });
+    });
   });
 }
 
 function updateCoinCounter() {
-  statusPanel.innerHTML = `Coins: ${playerCoins}`;
-  localStorage.setItem("playerCoins", playerCoins.toString());
+  uiManager.updateCoinCounter(playerCoins);
+  StorageManager.saveGameState(playerPosition, playerCoins);
 }
 
-function updateCollectedCoinsUI(coin: Coin) {
-  const collectedCoinsList = document.querySelector(
-    "#collectedCoinsList",
-  ) as HTMLUListElement;
-
-  const coinListItem = document.createElement("li");
-
-  // Create a clickable link for each coin
-  const coinLink = document.createElement("a");
-  coinLink.href = "#"; // Prevent default navigation
-  coinLink.textContent = `Coin: ${getCoinId(coin)}`;
-  coinLink.style.color = "blue"; // Optional: styling for the link
-  coinLink.style.textDecoration = "underline";
-
-  console.log(`Coin ID from getCoinId: ${getCoinId(coin)}`); // <--- Add this comment here
-
-  // Add click event to zoom and center the map on the coin's original cache
-  coinLink.addEventListener("click", (event) => {
-    event.preventDefault(); // Prevent default behavior of <a>
-    const [i, jWithSerial] = getCoinId(coin).split(":"); // Split by ":"
-    const [j] = jWithSerial.split("#"); // Split j from the serial using "#"
-
-    console.log(`Zooming to coin at i:${i}, j:${j}`); // Debugging log
-
-    const coinCell = board.getCellByIndices(Number(i), Number(j)); // Convert to numbers and get cell
-    const cacheBounds = board.getCellBounds(coinCell); // Get bounds for the cache
-    map.fitBounds(cacheBounds, { maxZoom: 19, animate: true }); // Zoom and center map
-  });
-
-  coinListItem.appendChild(coinLink);
-  collectedCoinsList.appendChild(coinListItem);
-}
-
-function createPopupForCache(cache: Cache) {
-  let coinValue = cache.coins.length;
+function createPopupForCache(
+  cache: Cache,
+  _rect: leaflet.Rectangle,
+): HTMLDivElement {
+  console.log(`Creating popup for cache at (${cache.cell.i}, ${cache.cell.j})`);
   const popupDiv = document.createElement("div");
-  popupDiv.innerHTML = `
-    <div>Cache at (${cache.cell.i}, ${cache.cell.j})</div>
-    <div>Coins: <span id="coinValue">${coinValue}</span></div>
-    <ul id="coinList">${
-    cache.coins.map((c) =>
-      `<li class="coin" data-id="${getCoinId(c)}">${getCoinId(c)}</li>`
-    ).join("")
-  }</ul>
-    <button id="collectButton">Collect</button>
-    <button id="depositButton">Deposit</button>
-  `;
 
-  // Center map on coin's cache when coin in the popup is clicked
-  popupDiv.querySelectorAll(".coin").forEach((coinElement) => {
-    coinElement.addEventListener("click", (event) => {
-      const coinId = (event.target as HTMLElement).dataset.id!;
-      const [i, j] = coinId.split(":").map(Number); // Extract cell indices from coin ID
-      const coinCell = board.getCellByIndices(i, j); // Get cell of the cache
-      const coinBounds = board.getCellBounds(coinCell);
+  // Populate popup content
+  function refreshPopupContent() {
+    popupDiv.innerHTML = `
+      <div>Cache at (${cache.cell.i}, ${cache.cell.j})</div>
+      <div>Coins: ${cache.coins.length}</div>
+      <ul>
+        ${cache.coins.map((coin) => `<li>${getCoinId(coin)}</li>`).join("")}
+      </ul>
+      <button id="collectButton">Collect</button>
+      <button id="depositButton">Deposit</button>
+    `;
+  }
 
-      map.fitBounds(coinBounds); // Center map on this cache's home bounds
-    });
-  });
+  refreshPopupContent(); // Initialize content
 
-  // Handle collecting coins
   popupDiv.querySelector("#collectButton")?.addEventListener("click", () => {
-    if (coinValue > 0) {
-      const collectedCoin = cache.coins.pop() as Coin; // Collect a coin
-      playerCoins++;
-      coinValue--;
+    if (cache.coins.length > 0) {
+      const collectedCoin = cache.coins.pop();
+      if (collectedCoin) {
+        playerInventory.push(collectedCoin);
+        playerCoins++;
+        saveCollectedCoinsToStorage();
+        saveCacheState(cache);
+        updateCoinCounter();
 
-      const coinList = popupDiv.querySelector("#coinList") as HTMLUListElement;
-      coinList.removeChild(coinList.lastChild!); // Remove coin from popup list
+        // Update the UI dynamically
+        uiManager.updateCollectedCoinsUI(getCoinId(collectedCoin), () => {
+          const [i, jWithSerial] = getCoinId(collectedCoin).split(":");
+          const [j] = jWithSerial.split("#");
+          const coinCell = board.getCellByIndices(Number(i), Number(j));
+          const cacheBounds = board.getCellBounds(coinCell);
+          map.fitBounds(cacheBounds, { maxZoom: 19, animate: true });
+        });
 
-      statusPanel.innerHTML = `Coins: ${playerCoins}`;
-      popupDiv.querySelector("#coinValue")!.textContent = `${coinValue}`;
-
-      // Update the collected coins list UI
-      playerInventory.push(collectedCoin);
-      saveCollectedCoinsToStorage();
-      updateCollectedCoinsUI(collectedCoin); // Add the coin to the list and make it clickable
-      updateCoinCounter();
-      saveCacheState(cache); // Save the updated state
+        refreshPopupContent(); // Refresh popup after collecting
+      }
     }
   });
 
   popupDiv.querySelector("#depositButton")?.addEventListener("click", () => {
-    if (playerCoins > 0) {
-      const depositedCoin = playerInventory.pop()!;
-      cache.coins.push(depositedCoin);
-      playerCoins--;
-      coinValue++;
+    if (playerInventory.length > 0) {
+      const depositedCoin = playerInventory.pop();
+      if (depositedCoin) {
+        cache.coins.push(depositedCoin);
+        playerCoins--;
+        saveCollectedCoinsToStorage();
+        saveCacheState(cache);
+        updateCoinCounter();
 
-      const coinList = popupDiv.querySelector("#coinList") as HTMLUListElement;
-      const newCoinItem = document.createElement("li");
-      newCoinItem.textContent = getCoinId(depositedCoin);
-      coinList.appendChild(newCoinItem);
+        // Update the UI dynamically
+        uiManager.removeCollectedCoin(getCoinId(depositedCoin));
 
-      statusPanel.innerHTML = `Coins: ${playerCoins}`;
-      popupDiv.querySelector("#coinValue")!.textContent = `${coinValue}`;
-      updateCoinCounter();
-      saveCacheState(cache); // Save updated state
-
-      // Remove from the collected coins UI
-      const collectedCoinsList = document.querySelector(
-        "#collectedCoinsList",
-      ) as HTMLUListElement;
-      const coinItems = Array.from(collectedCoinsList.querySelectorAll("li"));
-      for (const item of coinItems) {
-        if (item.textContent === `Coin: ${getCoinId(depositedCoin)}`) {
-          collectedCoinsList.removeChild(item);
-          break;
-        }
+        refreshPopupContent(); // Refresh popup after depositing
       }
-
-      saveCollectedCoinsToStorage(); // Update localStorage after removal
     }
+    UIManager;
   });
 
   return popupDiv;
 }
+
 function clearCaches() {
   cacheLayer.eachLayer((layer: CacheLayer) => {
     const cache = layer.cache;
@@ -300,14 +256,15 @@ function saveCacheState(cache: Cache) {
 }
 
 function loadGameState() {
-  const gameState = StorageManager.loadGameState();
+  const gameState = StorageManager.loadGameState(); // Load from storage
   if (gameState) {
-    playerPosition = gameState.playerPosition;
-    playerMarker.setLatLng(playerPosition);
-    playerCoins = gameState.playerCoins;
-    updateCoinCounter();
-    statusPanel.innerHTML = `Coins: ${playerCoins}`;
+    playerPosition = gameState.playerPosition; // Restore player position
+    playerCoins = gameState.playerCoins; // Restore player coin count
+    playerMarker.setLatLng(playerPosition); // Update player marker on map
+    updateCoinCounter(); // Update the UI coin counter
   }
+
+  loadCollectedCoinsFromStorage(); // Ensure inventory is restored after refresh
 }
 
 function loadCacheState(cell: Cell): Cache | null {
@@ -362,6 +319,7 @@ function clearCacheEntries() {
 function resetGame() {
   clearCacheEntries();
   StorageManager.clearAll();
+  uiManager.clearCollectedCoinsUI();
   location.reload();
 }
 
